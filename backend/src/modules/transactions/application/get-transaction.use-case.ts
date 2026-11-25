@@ -5,8 +5,8 @@ import type { TransactionRepository } from '../domain/transaction-repository';
 export class GetTransactionUseCase {
   constructor(private readonly transactions: TransactionRepository) {}
 
-  async execute(id: string): Promise<TransactionPrimitives> {
-    const transaction = await this.transactions.findById(id);
+  async execute(id: string, userId?: string): Promise<TransactionPrimitives> {
+    const transaction = await this.transactions.findById(id, userId);
     if (!transaction) throw new NotFoundError(`Transacción ${id} no encontrada`);
     return transaction.toPrimitives();
   }

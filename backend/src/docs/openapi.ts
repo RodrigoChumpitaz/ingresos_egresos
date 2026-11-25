@@ -42,9 +42,12 @@ export const openApiSpec = {
   servers: [{ url: '/', description: 'Servidor actual' }],
   tags: [
     { name: 'Health', description: 'Estado de la API' },
+    { name: 'Auth', description: 'Registro, inicio de sesión y sesión actual (cookie httpOnly)' },
     { name: 'Categories', description: 'Categorías de ingresos y egresos' },
     { name: 'Transactions', description: 'Movimientos de dinero' },
-    { name: 'Summary', description: 'Balance y totales' },
+    { name: 'Summary', description: 'Balance, ahorro, tendencia y totales' },
+    { name: 'SavingsGoals', description: 'Metas y apartados de ahorro (Nivel 2)' },
+    { name: 'ExchangeRates', description: 'Tipos de cambio gratuitos con caché' },
   ],
   paths: {
     '/api/v1/health': {
@@ -53,6 +56,18 @@ export const openApiSpec = {
         summary: 'Verifica que la API esté viva',
         responses: { 200: { description: 'OK' } },
       },
+    },
+    '/api/v1/auth/register': {
+      post: { tags: ['Auth'], summary: 'Registra una nueva cuenta personal', responses: { 201: { description: 'Cuenta creada' }, 409: errorResponse('Correo ya registrado') } },
+    },
+    '/api/v1/auth/login': {
+      post: { tags: ['Auth'], summary: 'Inicia sesión y emite cookie httpOnly', responses: { 200: { description: 'Sesión iniciada' }, 401: errorResponse('Credenciales inválidas') } },
+    },
+    '/api/v1/auth/logout': {
+      post: { tags: ['Auth'], summary: 'Cierra la sesión actual', responses: { 204: { description: 'Sesión cerrada' } } },
+    },
+    '/api/v1/auth/me': {
+      get: { tags: ['Auth'], summary: 'Devuelve el usuario autenticado actual', responses: { 200: { description: 'Usuario actual' }, 401: errorResponse('No autenticado') } },
     },
     '/api/v1/categories': {
       get: {
@@ -108,9 +123,11 @@ export const openApiSpec = {
         parameters: [
           { name: 'type', in: 'query', schema: { $ref: '#/components/schemas/MoneyType' } },
           { name: 'categoryId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'q', in: 'query', schema: { type: 'string' }, description: 'Búsqueda en descripción' },
           ...rangeParams,
           { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
           { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'all', in: 'query', schema: { type: 'string', enum: ['true', 'false'] }, description: 'Devuelve todos los ítems filtrados para exportación' },
         ],
         responses: {
           200: { description: 'Página de transacciones', content: json('PaginatedTransactions') },
@@ -162,12 +179,59 @@ export const openApiSpec = {
     '/api/v1/summary': {
       get: {
         tags: ['Summary'],
-        summary: 'Balance del período (ingresos - egresos) y totales por categoría',
-        parameters: rangeParams,
+        summary: 'Balance, ahorro neto, tasa de ahorro y totales por categoría',
+        parameters: [
+          ...rangeParams,
+          { name: 'compare', in: 'query', schema: { type: 'string', enum: ['prev'] }, description: 'Compara contra el período anterior equivalente' },
+        ],
         responses: {
           200: { description: 'Resumen', content: json('Summary') },
           400: errorResponse('Fechas inválidas'),
         },
+      },
+    },
+    '/api/v1/summary/trend': {
+      get: {
+        tags: ['Summary'],
+        summary: 'Serie temporal de ingresos, egresos y ahorro',
+        parameters: [
+          ...rangeParams,
+          { name: 'granularity', in: 'query', schema: { type: 'string', enum: ['auto', 'day', 'week', 'month'], default: 'auto' } },
+        ],
+        responses: {
+          200: { description: 'Serie temporal' },
+          400: errorResponse('Fechas inválidas'),
+        },
+      },
+    },
+    '/api/v1/savings-goals': {
+      get: {
+        tags: ['SavingsGoals'],
+        summary: 'Lista las metas de ahorro',
+        responses: { 200: { description: 'Lista de metas' } },
+      },
+      post: {
+        tags: ['SavingsGoals'],
+        summary: 'Crea una meta de ahorro',
+        responses: { 201: { description: 'Meta creada' }, 400: errorResponse('Datos inválidos'), 409: errorResponse('Nombre duplicado') },
+      },
+    },
+    '/api/v1/savings-goals/{id}/movements': {
+      post: {
+        tags: ['SavingsGoals'],
+        summary: 'Registra un aporte o retiro en una meta (no afecta Egresos)',
+        parameters: [uuidParam],
+        responses: { 201: { description: 'Movimiento registrado' }, 404: errorResponse('No encontrada'), 422: errorResponse('Saldo insuficiente') },
+      },
+    },
+    '/api/v1/exchange-rates': {
+      get: {
+        tags: ['ExchangeRates'],
+        summary: 'Tasas de cambio actuales cacheadas (PEN, USD, EUR, MXN)',
+        parameters: [
+          { name: 'base', in: 'query', schema: { type: 'string', enum: ['PEN', 'USD', 'EUR', 'MXN'], default: 'PEN' } },
+        ],
+        responses: { 200: { description: 'Tasas de cambio' } },
       },
     },
   },
@@ -210,6 +274,9 @@ export const openApiSpec = {
           id: { type: 'string', format: 'uuid' },
           type: { $ref: '#/components/schemas/MoneyType' },
           amount: { type: 'number', example: 2500.5 },
+          currency: { type: 'string', enum: ['PEN', 'USD', 'EUR', 'MXN'], example: 'PEN' },
+          originalAmount: { type: 'number', example: 100 },
+          exchangeRate: { type: 'number', example: 3.41 },
           description: { type: 'string', example: 'Pago de octubre' },
           categoryId: { type: 'string', format: 'uuid' },
           date: { type: 'string', format: 'date-time' },
@@ -222,6 +289,8 @@ export const openApiSpec = {
         required: ['amount', 'categoryId'],
         properties: {
           amount: { type: 'number', minimum: 0.01, example: 2500.5, description: 'Máximo 2 decimales' },
+          currency: { type: 'string', enum: ['PEN', 'USD', 'EUR', 'MXN'], default: 'PEN' },
+          exchangeRate: { type: 'number', minimum: 0.0001, example: 3.41, description: 'Requerido si currency != PEN' },
           categoryId: { type: 'string', format: 'uuid' },
           description: { type: 'string', maxLength: 200, example: 'Pago de octubre' },
           date: { type: 'string', format: 'date-time', description: 'Por defecto: ahora' },
@@ -231,6 +300,8 @@ export const openApiSpec = {
         type: 'object',
         properties: {
           amount: { type: 'number', minimum: 0.01, example: 2600 },
+          currency: { type: 'string', enum: ['PEN', 'USD', 'EUR', 'MXN'] },
+          exchangeRate: { type: 'number', minimum: 0.0001 },
           categoryId: { type: 'string', format: 'uuid' },
           description: { type: 'string', maxLength: 200 },
           date: { type: 'string', format: 'date-time' },
@@ -253,6 +324,8 @@ export const openApiSpec = {
           totalIncome: { type: 'number', example: 3000 },
           totalExpense: { type: 'number', example: 1250.75 },
           balance: { type: 'number', example: 1749.25 },
+          netSavings: { type: 'number', example: 1749.25 },
+          savingsRate: { type: 'number', example: 58.31 },
           byCategory: {
             type: 'array',
             items: {

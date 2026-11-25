@@ -5,13 +5,17 @@ import type { CategoryRepository } from '../domain/category-repository';
 export class UpdateCategoryUseCase {
   constructor(private readonly categories: CategoryRepository) {}
 
-  async execute(id: string, input: { name: string }): Promise<CategoryPrimitives> {
-    const category = await this.categories.findById(id);
+  async execute(id: string, input: { name: string }, userId?: string): Promise<CategoryPrimitives> {
+    const category = await this.categories.findById(id, userId);
     if (!category) throw new NotFoundError(`Categoría ${id} no encontrada`);
 
     category.rename(input.name);
 
-    const duplicated = await this.categories.findByNameAndType(category.name, category.type);
+    const duplicated = await this.categories.findByNameAndType(
+      category.name,
+      category.type,
+      category.userId,
+    );
     if (duplicated && duplicated.id !== category.id) {
       throw new ConflictError(`Ya existe una categoría "${category.name}" de tipo ${category.type}`);
     }

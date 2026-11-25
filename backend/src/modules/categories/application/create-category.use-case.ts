@@ -6,6 +6,7 @@ import type { CategoryRepository } from '../domain/category-repository';
 export interface CreateCategoryInput {
   name: string;
   type: MoneyType;
+  userId?: string;
 }
 
 export class CreateCategoryUseCase {
@@ -14,7 +15,11 @@ export class CreateCategoryUseCase {
   async execute(input: CreateCategoryInput): Promise<CategoryPrimitives> {
     const category = Category.create(input);
 
-    const duplicated = await this.categories.findByNameAndType(category.name, category.type);
+    const duplicated = await this.categories.findByNameAndType(
+      category.name,
+      category.type,
+      category.userId,
+    );
     if (duplicated) {
       throw new ConflictError(`Ya existe una categoría "${category.name}" de tipo ${category.type}`);
     }
