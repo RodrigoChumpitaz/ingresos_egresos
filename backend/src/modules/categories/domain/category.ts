@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { ValidationError } from '../../../shared/domain/errors';
 import { MONEY_TYPES, type MoneyType } from '../../../shared/domain/money-type';
 
+export const DEFAULT_USER_ID = '00000000-0000-4000-8000-000000000001';
+
 export interface CategoryPrimitives {
   id: string;
+  userId: string;
   name: string;
   type: MoneyType;
   createdAt: Date;
@@ -13,10 +16,11 @@ export interface CategoryPrimitives {
 export class Category {
   private constructor(private props: CategoryPrimitives) {}
 
-  static create(input: { name: string; type: MoneyType }): Category {
+  static create(input: { name: string; type: MoneyType; userId?: string }): Category {
     const now = new Date();
     return new Category({
       id: randomUUID(),
+      userId: input.userId ?? DEFAULT_USER_ID,
       name: Category.validateName(input.name),
       type: Category.validateType(input.type),
       createdAt: now,
@@ -25,7 +29,7 @@ export class Category {
   }
 
   static fromPrimitives(props: CategoryPrimitives): Category {
-    return new Category({ ...props });
+    return new Category({ ...props, userId: props.userId ?? DEFAULT_USER_ID });
   }
 
   rename(name: string): void {
@@ -34,6 +38,7 @@ export class Category {
   }
 
   get id() { return this.props.id; }
+  get userId() { return this.props.userId; }
   get name() { return this.props.name; }
   get type() { return this.props.type; }
 

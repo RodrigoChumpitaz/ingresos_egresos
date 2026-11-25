@@ -5,7 +5,7 @@ import type { CategoryRepository } from '../domain/category-repository';
 export class ListCategoriesUseCase {
   constructor(private readonly categories: CategoryRepository) {}
 
-  async execute(filter: { type?: MoneyType } = {}): Promise<CategoryPrimitives[]> {
+  async execute(filter: { type?: MoneyType; userId?: string } = {}): Promise<CategoryPrimitives[]> {
     const categories = await this.categories.findAll(filter);
     return categories.map((category) => category.toPrimitives());
   }

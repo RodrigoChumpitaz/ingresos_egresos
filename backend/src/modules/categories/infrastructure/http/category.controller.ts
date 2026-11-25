@@ -26,24 +26,28 @@ export function categoryRouter(useCases: CategoryUseCases): Router {
   const router = Router();
 
   router.get('/', async (req, res) => {
+    const userId = String(res.locals.userId);
     const query = validate(listQuerySchema, req.query);
-    res.json(await useCases.list.execute(query));
+    res.json(await useCases.list.execute({ ...query, userId }));
   });
 
   router.post('/', async (req, res) => {
+    const userId = String(res.locals.userId);
     const body = validate(createSchema, req.body);
-    res.status(201).json(await useCases.create.execute(body));
+    res.status(201).json(await useCases.create.execute({ ...body, userId }));
   });
 
   router.patch('/:id', async (req, res) => {
+    const userId = String(res.locals.userId);
     const { id } = validate(idParamsSchema, req.params);
     const body = validate(updateSchema, req.body);
-    res.json(await useCases.update.execute(id, body));
+    res.json(await useCases.update.execute(id, body, userId));
   });
 
   router.delete('/:id', async (req, res) => {
+    const userId = String(res.locals.userId);
     const { id } = validate(idParamsSchema, req.params);
-    await useCases.delete.execute(id);
+    await useCases.delete.execute(id, userId);
     res.status(204).send();
   });
 

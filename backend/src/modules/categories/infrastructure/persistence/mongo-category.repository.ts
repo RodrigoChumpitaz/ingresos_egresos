@@ -7,6 +7,7 @@ const CategoryMapper = {
   toDomain(doc: CategoryDocument): Category {
     return Category.fromPrimitives({
       id: doc._id,
+      userId: doc.userId,
       name: doc.name,
       type: doc.type,
       createdAt: doc.createdAt,
@@ -25,25 +26,30 @@ export class MongoCategoryRepository implements CategoryRepository {
     await CategoryModel.replaceOne({ _id: doc._id }, doc, { upsert: true });
   }
 
-  async findById(id: string): Promise<Category | null> {
-    const doc = await CategoryModel.findById(id).lean<CategoryDocument>();
+  async findById(id: string, userId?: string): Promise<Category | null> {
+    const query = userId ? { _id: id, userId } : { _id: id };
+    const doc = await CategoryModel.findOne(query).lean<CategoryDocument>();
     return doc ? CategoryMapper.toDomain(doc) : null;
   }
 
-  async findByNameAndType(name: string, type: MoneyType): Promise<Category | null> {
-    const doc = await CategoryModel.findOne({ name, type })
+  async findByNameAndType(name: string, type: MoneyType, userId?: string): Promise<Category | null> {
+    const query = userId ? { name, type, userId } : { name, type };
+    const doc = await CategoryModel.findOne(query)
       .collation({ locale: 'es', strength: 2 })
       .lean<CategoryDocument>();
     return doc ? CategoryMapper.toDomain(doc) : null;
   }
 
-  async findAll(filter: { type?: MoneyType } = {}): Promise<Category[]> {
-    const query = filter.type ? { type: filter.type } : {};
+  async findAll(filter: { type?: MoneyType; userId?: string } = {}): Promise<Category[]> {
+    const query: Record<string, unknown> = {};
+    if (filter.type) query.type = filter.type;
+    if (filter.userId) query.userId = filter.userId;
     const docs = await CategoryModel.find(query).sort({ type: 1, name: 1 }).lean<CategoryDocument[]>();
     return docs.map(CategoryMapper.toDomain);
   }
 
-  async delete(id: string): Promise<void> {
-    await CategoryModel.deleteOne({ _id: id });
+  async delete(id: string, userId?: string): Promise<void> {
+    const query = userId ? { _id: id, userId } : { _id: id };
+    await CategoryModel.deleteOne(query);
   }
 }

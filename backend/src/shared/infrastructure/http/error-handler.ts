@@ -4,11 +4,13 @@ import {
   ConflictError,
   DomainError,
   NotFoundError,
+  UnauthorizedError,
   ValidationError,
 } from '../../domain/errors';
 
 function statusFor(error: DomainError): number {
   if (error instanceof ValidationError) return 400;
+  if (error instanceof UnauthorizedError) return 401;
   if (error instanceof NotFoundError) return 404;
   if (error instanceof ConflictError) return 409;
   if (error instanceof BusinessRuleError) return 422;
@@ -27,6 +29,11 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 
   if (error?.type === 'entity.parse.failed') {
     res.status(400).json({ error: 'ValidationError', message: 'El body no es un JSON válido' });
+    return;
+  }
+
+  if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: number }).code === 11000) {
+    res.status(409).json({ error: 'ConflictError', message: 'Ya existe un registro con los mismos datos únicos' });
     return;
   }
 

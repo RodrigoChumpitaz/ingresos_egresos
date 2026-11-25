@@ -6,6 +6,7 @@ import type {
   Pagination,
   TransactionFilter,
   TransactionRepository,
+  TrendEntry,
 } from '../../domain/transaction-repository';
 import { TransactionModel, type TransactionDocument } from './transaction.model';
 
@@ -20,8 +21,13 @@ const TransactionMapper = {
   },
 };
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function toMongoQuery(filter: TransactionFilter): QueryFilter<TransactionDocument> {
   const query: QueryFilter<TransactionDocument> = {};
+  if (filter.userId) query.userId = filter.userId;
   if (filter.type) query.type = filter.type;
   if (filter.categoryId) query.categoryId = filter.categoryId;
   if (filter.from || filter.to) {
@@ -29,6 +35,9 @@ function toMongoQuery(filter: TransactionFilter): QueryFilter<TransactionDocumen
       ...(filter.from && { $gte: filter.from }),
       ...(filter.to && { $lte: filter.to }),
     };
+  }
+  if (filter.q?.trim()) {
+    query.description = { $regex: escapeRegex(filter.q.trim()), $options: 'i' };
   }
   return query;
 }
@@ -39,33 +48,41 @@ export class MongoTransactionRepository implements TransactionRepository {
     await TransactionModel.replaceOne({ _id: doc._id }, doc, { upsert: true });
   }
 
-  async findById(id: string): Promise<Transaction | null> {
-    const doc = await TransactionModel.findById(id).lean<TransactionDocument>();
+  async findById(id: string, userId?: string): Promise<Transaction | null> {
+    const query = userId ? { _id: id, userId } : { _id: id };
+    const doc = await TransactionModel.findOne(query).lean<TransactionDocument>();
     return doc ? TransactionMapper.toDomain(doc) : null;
   }
 
-  async findMany(filter: TransactionFilter, { page, limit }: Pagination): Promise<Paginated<Transaction>> {
+  async findMany(filter: TransactionFilter, { page, limit, all }: Pagination): Promise<Paginated<Transaction>> {
     const query = toMongoQuery(filter);
+    const cursor = TransactionModel.find(query).sort({ date: -1, createdAt: -1 });
+    if (!all) {
+      cursor.skip((page - 1) * limit).limit(limit);
+    }
     const [docs, total] = await Promise.all([
-      TransactionModel.find(query)
-        .sort({ date: -1, createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean<TransactionDocument[]>(),
+      cursor.lean<TransactionDocument[]>(),
       TransactionModel.countDocuments(query),
     ]);
-    return { items: docs.map(TransactionMapper.toDomain), total, page, limit };
+    return {
+      items: docs.map(TransactionMapper.toDomain),
+      total,
+      page: all ? 1 : page,
+      limit: all ? Math.max(total, 1) : limit,
+    };
   }
 
-  async delete(id: string): Promise<void> {
-    await TransactionModel.deleteOne({ _id: id });
+  async delete(id: string, userId?: string): Promise<void> {
+    const query = userId ? { _id: id, userId } : { _id: id };
+    await TransactionModel.deleteOne(query);
   }
 
-  async existsByCategory(categoryId: string): Promise<boolean> {
-    return (await TransactionModel.exists({ categoryId })) !== null;
+  async existsByCategory(categoryId: string, userId?: string): Promise<boolean> {
+    const query = userId ? { categoryId, userId } : { categoryId };
+    return (await TransactionModel.exists(query)) !== null;
   }
 
-  async totalsByCategory(filter: Pick<TransactionFilter, 'from' | 'to'>): Promise<CategoryTotal[]> {
+  async totalsByCategory(filter: Pick<TransactionFilter, 'from' | 'to' | 'userId'>): Promise<CategoryTotal[]> {
     return TransactionModel.aggregate<CategoryTotal>([
       { $match: toMongoQuery(filter) },
       {
@@ -77,5 +94,12 @@ export class MongoTransactionRepository implements TransactionRepository {
       },
       { $project: { _id: 0, categoryId: '$_id.categoryId', type: '$_id.type', total: 1, count: 1 } },
     ]);
+  }
+
+  async findEntriesForTrend(filter: Pick<TransactionFilter, 'from' | 'to' | 'userId'>): Promise<TrendEntry[]> {
+    return TransactionModel.find(toMongoQuery(filter))
+      .select({ _id: 0, type: 1, amount: 1, date: 1 })
+      .sort({ date: 1 })
+      .lean<TrendEntry[]>();
   }
 }

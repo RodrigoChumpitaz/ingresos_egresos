@@ -2,7 +2,7 @@ import { BusinessRuleError, NotFoundError } from '../../../shared/domain/errors'
 import type { CategoryRepository } from '../domain/category-repository';
 
 export interface CategoryUsageChecker {
-  existsByCategory(categoryId: string): Promise<boolean>;
+  existsByCategory(categoryId: string, userId?: string): Promise<boolean>;
 }
 
 export class DeleteCategoryUseCase {
@@ -11,14 +11,14 @@ export class DeleteCategoryUseCase {
     private readonly usage: CategoryUsageChecker,
   ) {}
 
-  async execute(id: string): Promise<void> {
-    const category = await this.categories.findById(id);
+  async execute(id: string, userId?: string): Promise<void> {
+    const category = await this.categories.findById(id, userId);
     if (!category) throw new NotFoundError(`Categoría ${id} no encontrada`);
 
-    if (await this.usage.existsByCategory(id)) {
+    if (await this.usage.existsByCategory(id, category.userId)) {
       throw new BusinessRuleError('No se puede eliminar una categoría que tiene transacciones');
     }
 
-    await this.categories.delete(id);
+    await this.categories.delete(id, category.userId);
   }
 }
